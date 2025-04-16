@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wishlist</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+        .wishlist-item {
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+        }
+        .wishlist-item img {
+            max-width: 80px;
+            height: auto;
+            margin-right: 15px;
+        }
+        .item-details {
+            flex-grow: 1;
+        }
+        .wishlist-actions button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+        .add-to-cart-btn {
+            background-color: #007bff;
+            color: white;
+        }
+        .remove-wishlist-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+        #wishlist-items-container {
+            margin-bottom: 20px;
+        }
+        .empty-wishlist {
+            text-align: center;
+            padding: 20px;
+            color: #777;
+        }
+        #loading-message {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            color: #777;
+        }
+
+        #error-message {
+            text-align: center;
+            padding: 20px;
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Wishlist</h1>
+    <div id="wishlist-items-container">
+        <p id="loading-message">Loading wishlist items...</p>
+        <p id="error-message" style="display:none;"></p>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+        import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+        // Your Firebase configuration (same as your product display page)
+        const firebaseConfig = {
+            apiKey: "AIzaSyCk3NBT-ZqDYQSJVYixqt05BT4pg1Odl-4",
+            authDomain: "admin-login-signup.firebaseapp.com",
+            projectId: "admin-login-signup",
+            storageBucket: "admin-login-signup.firebasestorage.app",
+            messagingSenderId: "524139872298",
+            appId: "1:524139872298:web:fbd21b59812e5920b40353"
+        };
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            const productsCollection = collection(db, "products");
+            const wishlistItemsContainer = document.getElementById('wishlist-items-container');
+            const loadingMessage = document.getElementById('loading-message');
+            const errorMessage = document.getElementById('error-message');
+
+            function getWishlistIds() {
+                const wishlistData = localStorage.getItem('wishlist');
+                return wishlistData ? JSON.parse(wishlistData) : [];
+            }
+
+            function updateWishlistInLocalStorage(wishlist) {
+                localStorage.setItem('wishlist', JSON.stringify(wishlist));
+            }
+
+            async function fetchWishlistProducts(wishlistIds) {
+                if (wishlistIds.length === 0) {
+                    loadingMessage.style.display = 'none';
+                    wishlistItemsContainer.innerHTML = '<p class="empty-wishlist">Your wishlist is empty.</p>';
+                    return [];
+                }
+
+                const q = query(productsCollection, where("__name__", "in", wishlistIds));
+                const querySnapshot = await getDocs(q);
+                const products = {};
+                querySnapshot.forEach((doc) => {
+                    products[doc.id] = doc.data();
+                });
+                return products;
+            }
+
+            function displayWishlistItems(wishlistProductData) {
+                wishlistItemsContainer.innerHTML = '';
+                loadingMessage.style.display = 'none';
+
+                const wishlistIds = getWishlistIds();
+
+                if (wishlistIds.length === 0) {
+                    wishlistItemsContainer.innerHTML = '<p class="empty-wishlist">Your wishlist is empty.</p>';
+                    return;
+                }
+
+                wishlistIds.forEach(productId => {
+                    if (wishlistProductData[productId]) {
+                        const product = wishlistProductData[productId];
+
+                        const wishlistDiv = document.createElement('div');
+                        wishlistDiv.classList.add('wishlist-item');
+
+                        const image = document.createElement('img');
+                        image.src = product.imageUrl || 'https://via.placeholder.com/80';
+                        image.alt = product.title || 'Product Image';
+
+                        const detailsDiv = document.createElement('div');
+                        detailsDiv.classList.add('item-details');
+                        detailsDiv.innerHTML = `<h3>${product.title}</h3><p>Price: $${product.price.toFixed(2)}</p>`;
+
+                        const actionsDiv = document.createElement('div');
+                        actionsDiv.classList.add('wishlist-actions');
+
+                        const addToCartButton = document.createElement('button');
+                        addToCartButton.classList.add('add-to-cart-btn');
+                        addToCartButton.textContent = 'Add to Cart';
+                        addToCartButton.addEventListener('click', () => addToCart(productId));
+
+                        const removeWishlistButton = document.createElement('button');
+                        removeWishlistButton.classList.add('remove-wishlist-btn');
+                        removeWishlistButton.textContent = 'Remove';
+                        removeWishlistButton.addEventListener('click', () => removeFromWishlist(productId));
+
+                        actionsDiv.appendChild(addToCartButton);
+                        actionsDiv.appendChild(removeWishlistButton);
+
+                        wishlistDiv.appendChild(image);
+                        wishlistDiv.appendChild(detailsDiv);
+                        wishlistDiv.appendChild(actionsDiv);
+
+                        wishlistItemsContainer.appendChild(wishlistDiv);
+                    }
+                });
+            }
+
+            function addToCart(productId) {
+                const cart = getCart(); // Assuming you have getCart() function from your product display page
+                if (!cart.includes(productId)) {
+                    cart.push(productId);
+                    saveCart(cart); // Assuming you have saveCart() function
+                    alert("Added to cart!");
+                } else {
+                    alert("Product already in cart!");
+                }
+            }
+
+            function removeFromWishlist(productId) {
+                const wishlist = getWishlistIds();
+                const updatedWishlist = wishlist.filter(id => id !== productId);
+                updateWishlistInLocalStorage(updatedWishlist);
+                fetchAndDisplayWishlist();
+            }
+
+            async function fetchAndDisplayWishlist() {
+                try {
+                    const wishlistIds = getWishlistIds();
+                    const wishlistProducts = await fetchWishlistProducts(wishlistIds);
+                    displayWishlistItems(wishlistProducts);
+                } catch (error) {
+                    console.error("Error fetching or displaying wishlist:", error);
+                    loadingMessage.style.display = 'none';
+                    errorMessage.textContent = 'Error loading wishlist items.';
+                    errorMessage.style.display = 'block';
+                }
+            }
+
+            // Helper functions (assuming these are the same as in your product display page)
+            function getCart() {
+                const cartData = localStorage.getItem('cart');
+                return cartData ? JSON.parse(cartData) : [];
+            }
+
+            function saveCart(cart) {
+                localStorage.setItem('cart', JSON.stringify(cart));
+            }
+
+            // Initial fetch and display of wishlist items
+            fetchAndDisplayWishlist();
+
+        } catch (error) {
+            console.error("Firebase initialization error:", error);
+            const loadingMessage = document.getElementById('loading-message');
+            const errorMessage = document.getElementById('error-message');
+            loadingMessage.style.display = 'none';
+            errorMessage.textContent = 'Error initializing Firebase.';
+            errorMessage.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

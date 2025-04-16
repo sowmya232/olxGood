@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shopping Cart</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+        .cart-item {
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+        }
+        .cart-item img {
+            max-width: 80px;
+            height: auto;
+            margin-right: 15px;
+        }
+        .item-details {
+            flex-grow: 1;
+        }
+        .quantity-controls {
+            display: flex;
+            align-items: center;
+            margin-right: 15px;
+        }
+        .quantity-controls button {
+            padding: 5px 10px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+        .remove-button {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 15px;
+            font-size: 0.9em;
+        }
+        .total {
+            font-weight: bold;
+            margin-top: 20px;
+            text-align: right;
+        }
+        #cart-items-container {
+            margin-bottom: 20px;
+        }
+        .empty-cart {
+            text-align: center;
+            padding: 20px;
+            color: #777;
+        }
+        #loading-message {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            color: #777;
+        }
+
+        #error-message {
+            text-align: center;
+            padding: 20px;
+            color: red;
+            font-weight: bold;
+        }
+        .place-order-container {
+            margin-top: 20px;
+            text-align: right;
+        }
+        .place-order-button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.1em;
+        }
+        .place-order-button:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <h1>Shopping Cart</h1>
+    <div id="cart-items-container">
+        <p id="loading-message">Loading cart items...</p>
+        <p id="error-message" style="display:none;"></p>
+    </div>
+    <div class="total" id="subtotal-container" style="display:none;">
+        Subtotal: $<span id="cart-subtotal">0.00</span>
+    </div>
+    <div class="place-order-container" id="place-order-container" style="display:none;">
+        <button class="place-order-button" id="place-order-btn">Place Order</button>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+        import { getFirestore, collection, doc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+        // Your Firebase configuration (same as your product display page)
+        const firebaseConfig = {
+            apiKey: "AIzaSyCk3NBT-ZqDYQSJVYixqt05BT4pg1Odl-4",
+            authDomain: "admin-login-signup.firebaseapp.com",
+            projectId: "admin-login-signup",
+            storageBucket: "admin-login-signup.firebasestorage.app",
+            messagingSenderId: "524139872298",
+            appId: "1:524139872298:web:fbd21b59812e5920b40353"
+        };
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            const productsCollection = collection(db, "products");
+            const cartItemsContainer = document.getElementById('cart-items-container');
+            const cartSubtotalElement = document.getElementById('cart-subtotal');
+            const subtotalContainer = document.getElementById('subtotal-container');
+            const placeOrderContainer = document.getElementById('place-order-container');
+            const loadingMessage = document.getElementById('loading-message');
+            const errorMessage = document.getElementById('error-message');
+            const placeOrderButton = document.getElementById('place-order-btn');
+
+            function getCartIds() {
+                const cartData = localStorage.getItem('cart');
+                return cartData ? JSON.parse(cartData) : [];
+            }
+
+            function updateCartInLocalStorage(cart) {
+                localStorage.setItem('cart', JSON.stringify(cart));
+            }
+
+            async function fetchCartProducts(cartIds) {
+                if (cartIds.length === 0) {
+                    loadingMessage.style.display = 'none';
+                    cartItemsContainer.innerHTML = '<p class="empty-cart">Your cart is empty.</p>';
+                    subtotalContainer.style.display = 'none';
+                    placeOrderContainer.style.display = 'none';
+                    return [];
+                }
+
+                const q = query(productsCollection, where("__name__", "in", cartIds)); // Use "__name__" to query by document ID
+                const querySnapshot = await getDocs(q);
+                const products = {};
+                querySnapshot.forEach((doc) => {
+                    products[doc.id] = doc.data();
+                });
+                return products;
+            }
+
+            function displayCartItems(cartProductData) {
+                cartItemsContainer.innerHTML = ''; // Clear loading message or previous items
+                loadingMessage.style.display = 'none';
+
+                const cart = getCartIds();
+                let subtotal = 0;
+                const productQuantities = {};
+
+                // Count product quantities based on IDs in the cart array
+                cart.forEach(productId => {
+                    productQuantities[productId] = (productQuantities[productId] || 0) + 1;
+                });
+
+                if (Object.keys(productQuantities).length === 0) {
+                    cartItemsContainer.innerHTML = '<p class="empty-cart">Your cart is empty.</p>';
+                    subtotalContainer.style.display = 'none';
+                    placeOrderContainer.style.display = 'none';
+                    return;
+                }
+
+                for (const productId in productQuantities) {
+                    if (productQuantities.hasOwnProperty(productId) && cartProductData[productId]) {
+                        const product = cartProductData[productId];
+                        const quantity = productQuantities[productId];
+                        const itemTotal = product.price * quantity;
+                        subtotal += itemTotal;
+
+                        const cartItemDiv = document.createElement('div');
+                        cartItemDiv.classList.add('cart-item');
+
+                        const image = document.createElement('img');
+                        image.src = product.imageUrl || 'https://via.placeholder.com/80';
+                        image.alt = product.title || 'Product Image';
+
+                        const detailsDiv = document.createElement('div');
+                        detailsDiv.classList.add('item-details');
+                        detailsDiv.innerHTML = `<h3>${product.title}</h3><p>Price: $${product.price.toFixed(2)}</p>`;
+
+                        const quantityControlsDiv = document.createElement('div');
+                        quantityControlsDiv.classList.add('quantity-controls');
+
+                        const decreaseButton = document.createElement('button');
+                        decreaseButton.textContent = '-';
+                        decreaseButton.addEventListener('click', () => decreaseQuantity(productId));
+
+                        const quantitySpan = document.createElement('span');
+                        quantitySpan.textContent = quantity;
+
+                        const increaseButton = document.createElement('button');
+                        increaseButton.textContent = '+';
+                        increaseButton.addEventListener('click', () => increaseQuantity(productId));
+
+                        quantityControlsDiv.appendChild(decreaseButton);
+                        quantityControlsDiv.appendChild(quantitySpan);
+                        quantityControlsDiv.appendChild(increaseButton);
+
+                        const itemTotalSpan = document.createElement('span');
+                        itemTotalSpan.textContent = `$${itemTotal.toFixed(2)}`;
+                        itemTotalSpan.style.marginLeft = '15px';
+                        itemTotalSpan.style.fontWeight = 'bold';
+
+                        const removeButton = document.createElement('button');
+                        removeButton.classList.add('remove-button');
+                        removeButton.textContent = 'Remove';
+                        removeButton.addEventListener('click', () => removeItem(productId)); // Add event listener for remove
+
+                        cartItemDiv.appendChild(image);
+                        cartItemDiv.appendChild(detailsDiv);
+                        cartItemDiv.appendChild(quantityControlsDiv);
+                        cartItemDiv.appendChild(itemTotalSpan);
+                        cartItemDiv.appendChild(removeButton); // Append the remove button
+
+                        cartItemsContainer.appendChild(cartItemDiv);
+                    }
+                }
+
+                cartSubtotalElement.textContent = subtotal.toFixed(2);
+                subtotalContainer.style.display = 'block';
+                placeOrderContainer.style.display = 'block';
+            }
+
+            function increaseQuantity(productId) {
+                const cart = getCartIds();
+                cart.push(productId);
+                updateCartInLocalStorage(cart);
+                fetchAndDisplayCart();
+            }
+
+            function decreaseQuantity(productId) {
+                const cart = getCartIds();
+                const index = cart.indexOf(productId);
+                if (index > -1) {
+                    cart.splice(index, 1);
+                    updateCartInLocalStorage(cart);
+                    fetchAndDisplayCart();
+                }
+            }
+
+            function removeItem(productId) {
+                const cart = getCartIds();
+                const updatedCart = cart.filter(id => id !== productId); // Create a new array without the removed item
+                updateCartInLocalStorage(updatedCart);
+                fetchAndDisplayCart();
+            }
+
+            function handlePlaceOrder() {
+                const cartIds = getCartIds();
+                if (cartIds.length > 0) {
+                    alert("Order placed! (Implementation for actual order processing would go here)");
+                    // In a real application, you would:
+                    // 1. Send the cart data (product IDs and quantities) to your backend.
+                    // 2. Handle payment processing.
+                    // 3. Update inventory.
+                    // 4. Clear the cart in local storage after a successful order.
+                    localStorage.removeItem('cart');
+                    fetchAndDisplayCart(); // Refresh the cart to show it's empty
+                } else {
+                    alert("Your cart is empty. Nothing to order!");
+                }
+            }
+
+            async function fetchAndDisplayCart() {
+                try {
+                    const cartIds = getCartIds();
+                    const cartProducts = await fetchCartProducts(cartIds);
+                    displayCartItems(cartProducts);
+                } catch (error) {
+                    console.error("Error fetching or displaying cart:", error);
+                    loadingMessage.style.display = 'none';
+                    errorMessage.textContent = 'Error loading cart items.';
+                    errorMessage.style.display = 'block';
+                }
+            }
+
+            // Add event listener for the Place Order button
+            placeOrderButton.addEventListener('click', handlePlaceOrder);
+
+            // Initial fetch and display of cart items
+            fetchAndDisplayCart();
+
+        } catch (error) {
+            console.error("Firebase initialization error:", error);
+            const loadingMessage = document.getElementById('loading-message');
+            const errorMessage = document.getElementById('error-message');
+            loadingMessage.style.display = 'none';
+            errorMessage.textContent = 'Error initializing Firebase.';
+            errorMessage.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
